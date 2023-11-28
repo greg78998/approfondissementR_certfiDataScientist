@@ -1,0 +1,153 @@
+---
+title: "Tennis"
+author: "GrégoireHaniquaut"
+date: "2023-11-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+Nous considérons les données sur les résultats de tennis dans les tournois du Grand Chelem en 2013.
+
+# Importer les données.
+
+```{r Question}
+library(dplyr)
+
+setwd("C:/Users/cepe-s4-03/Desktop/tennis_data")
+
+tennis_db <- read.delim(file ="FrenchOpen-men-2013.csv", 
+                      header = TRUE, 
+                      sep = ",")
+
+tennis_rg <- tennis_db
+
+```
+# 2. Afficher le nom des adversaires de Roger Federer
+
+```{r Question2}
+library(dplyr)
+library(stringr)
+
+setwd("C:/Users/cepe-s4-03/Desktop/tennis_data")
+
+PlayerName <- "Federer"
+adersaire_RG <- tennis_db %>% filter(str_extract(Player1,PlayerName)==PlayerName | str_extract(Player2,PlayerName)==PlayerName)
+adersaire_RG
+```
+
+
+# 3. Afficher le nom des demi-finalistes. (7: Finale, 6: Demi-finale, . . . )
+
+```{r Question2}
+library(dplyr)
+
+setwd("C:/Users/cepe-s4-03/Desktop/tennis_data")
+
+tennis_db %>% group_by(Player1) %>% 
+              filter(Round >=6) %>%
+              select(Player1,Player2, Round)
+
+
+                            
+
+```
+
+
+# 4. Combien y a t-il eu de points disputés en moyenne par match ? Il faudra penser à ajouter dans la table une variable correspondant au nombre de points de chaque match (verbe mutate).
+
+```{r Question4}
+
+adddetail  <- tennis_db %>% 
+                group_by(Player1, Player2) %>%
+                mutate(nb_point = sum(TPW.1,TPW.2, na.rm=TRUE)) %>%
+                ungroup() %>%
+                summarise(moyenne_nb_point = mean(nb_point))
+
+adddetail                         
+
+```
+
+# 5. Combien y a t-il eu d’aces par match en moyenne ?
+
+```{r Question5}
+
+ace  <- tennis_db %>% 
+                group_by(Player1, Player2) %>%
+                mutate(nb_ace = sum(ACE.1,ACE.2, na.rm=TRUE)) %>%
+                ungroup() %>%
+                summarise(moyenne_nb_ace = mean(nb_ace))
+
+ace                         
+
+```
+
+# 6. Combien y a t-il eu de doubles fautes au total dans le tournoi ?
+
+```{r Question6}
+
+tennis_db %>% 
+                group_by(Player1, Player2) %>%
+                mutate(nb_doublefautes = sum(DBF.1,DBF.2, na.rm=TRUE)) %>%
+                ungroup() %>%
+                summarise(moyenne_doublefaute = mean(nb_doublefautes))
+
+```
+
+# 9 - Concaténer les tables en ajoutant une variable permettant d’identifier le tournoi. On pourra utiliser bind_rows() avec l’option .id
+
+```{r Question9}
+
+setwd("C:/Users/cepe-s4-03/Desktop/tennis_data")
+
+tennis_wb_data <- read.delim(file ="Wimbledon-men-2013.csv", 
+                      header = TRUE, 
+                      sep = ",")
+
+tennis_wb <- tennis_wb_data %>% mutate(competition2 = "WB") 
+tennis_rg <- tennis_rg %>% mutate(competition2 = "RG")
+                             
+tennis <- tennis_wb %>% bind_rows(tennis_rg, .id = "Tournoi")
+
+
+
+
+```
+
+# 10. Afficher les matchs de Federer pour chaque tournoi.
+
+
+```{r Question9}
+
+PlayerName <- "Federer"
+
+tennis_rg %>% filter(str_extract(Player1,PlayerName)==PlayerName | str_extract(Player2,PlayerName)==PlayerName)
+
+```
+
+# 11. Comparer les nombres d’aces par matchs à chaque tours pour les tournois de Roland Garros et Wimbledon.
+
+
+```{r Question9}
+
+tennis %>% group_by(Player1, Player2, Tournoi,Round) %>%
+           mutate(nb_ace = sum(ACE.1,ACE.2, na.rm=TRUE)) %>%
+           ungroup() %>%
+           group_by(Tournoi,Round) %>%
+           summarise(nombre_ace = n(),
+                     moyenne_nb_ace = mean(nb_ace)) %>%
+           pivot_wider(id_cols = Tournoi, names_from = Round, values_from=moyenne_nb_ace)
+
+```
+
+
+
+
+
+
+
+

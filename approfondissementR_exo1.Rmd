@@ -1,0 +1,68 @@
+---
+title: "Tidyverse"
+output:
+  html_document: default
+  word_document: default
+date: "2023-11-27"
+---
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 0 - Chargement de la table IRIS
+
+Premiers exercices sur Tidyverse, utiliser les fonctions principales du packages.
+
+```{r Introduction, echo=TRUE}
+library(dplyr)
+
+data("iris")
+```
+
+## 1 - Selectionner les variables 
+
+```{r question1, echo=TRUE}
+iris_db_sb <- iris %>% select(Sepal.Width, Species)
+```
+
+## 2 - Filtre sur les espèces (versicolor // virginica)
+
+
+```{r question2, echo=TRUE}
+iris_db_subset <- iris %>% filter(Species == ("versicolor") | Species == ("virginica") )
+```
+
+
+## 3 - Calculer le nombre d'iris setosa en utilisant summarise 
+
+
+```{r question3, echo=TRUE}
+iris %>% filter(Species == "setosa") %>% summarise(n())
+```
+
+## 4 - calculer la moyenne de la variable 
+
+
+```{r question4, echo=TRUE}
+iris %>% filter(Species == "versicolor") %>% summarise(moyen = mean(Petal.Width))
+```
+
+## 5 - Ajouter une nouvelle variable
+
+
+```{r question5, echo=TRUE}
+iris %>% mutate(Sum_Petal = sum(Petal.Width,Sepal.Width))
+```
+
+## 6 - Calcul de la moyenne et la variance de la variable Sepal.Length pour chaque espèce
+
+
+```{r question6, echo=TRUE}
+
+iris %>% group_by(Species) %>%
+         summarise( Moyenne = mean(Sepal.Length),
+                 Variance = var(Sepal.Length))
+
+```
+

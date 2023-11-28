@@ -1,0 +1,138 @@
+---
+title: "Aviation"
+author: "GrégoireHaniquaut"
+date: "2023-11-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+Nous considérons la table hflights qui contient des informations sur les vols au départ des aéroports Houston
+George Bush Intercontinental Airport (IATA: IAH) et William P. Hobby Airport (IATA: HOU).
+
+```{r cars}
+install.packages("hflights")
+library(hflights)
+library(dplyr)
+data("hflights")
+hflights_data <- as_tibble(hflights)
+hflights <- hflights_data
+```
+
+
+## 1 - Selectionner les variables qui se situent entre Orgin et Cancelled de différentes façons.
+
+
+```{r Question1}
+names(hflights)
+hflights %>% select(Origin:Cancelled)
+```
+
+## 2 - Sélectionner les variables DepTime, ArrTime, ActualElapsedTime, AirTime, ArrDelay et DepDelay.
+
+
+```{r Question2}
+hflights %>% select(DepTime, ArrTime, ActualElapsedTime, AirTime, ArrDelay, DepDelay)
+
+hflights %>%
+select(ends_with(c("Time", "Delay")))
+```
+### Question 3 :  Ajouter une variable ActualGroundTime qui correspond à ActualElapsedTime moins AirTime, et ne conserver que ces trois variables.
+
+```{r Question3}
+hflights <- hflights %>% mutate(ActualGroundTime = ActualElapsedTime - AirTime) 
+
+hflights %>% select(ActualElapsedTime, AirTime, ActualGroundTime)
+
+```
+
+### Question 4 :  ajouter une variable AverageSpeed qui donne la vitesse moyenne du vol, ne conserver que les variables Origin, Dest, Distance, AirTime et AverageSpeed, puis ordonner la table selon les valeurs décroissantes de cette variable
+
+```{r Question3}
+hflights <- hflights %>% mutate(Speed = Distance /  AirTime) %>% 
+             group_by(Origin, Dest) %>%
+             mutate(AverageSpeed = mean(Speed, na.rm = TRUE)) %>%
+             select(Origin, Dest, Distance, AirTime,AverageSpeed) %>% 
+             arrange(desc(AverageSpeed))
+
+hflights %>% select(Origin, Dest,AverageSpeed) %>% distinct()  
+  
+```
+
+
+### Question 5 : Sélectionner les vols à destination de JFK, et ne conserver que les variables FlightNum, Origin et Dest.
+
+```{r Question5}
+JFK_flight <- hflights_data %>% filter(Dest == "JFK") %>% 
+                                select(FlightNum,FlightNum, Origin, Dest) %>% 
+                                summarise(n = n())
+```
+
+
+### Question 7 : Sélectionner les vols à destination de JFK, et ne conserver que les variables FlightNum, Origin et Dest.
+
+```{r Question7}
+
+hflights_data %>% 
+  summarise(
+      n = n(), 
+      nb_dest = n_distinct(Dest),
+      nb_carrier = n_distinct(UniqueCarrier) 
+)
+
+
+```
+
+### Question 8 : Créer un résumé de hflights qui contient, pour les vols de la compagnie AA :
+
+```{r Question8}
+
+hflights_data %>% filter(UniqueCarrier=="AA") %>%
+  summarise(
+      n = n(), 
+      n_cancelled = sum(Cancelled),
+      mean_delay = mean(ArrDelay, na.rm = TRUE) 
+)
+
+
+```
+
+
+### Question 9 : Calculer pour chaque compagnie :
+
+```{r Question9}
+
+hflights_data %>% group_by(UniqueCarrier) %>%
+  summarise(
+      nb_vol = n(), 
+      mean_delay = mean(AirTime, na.rm = TRUE) 
+)
+
+
+```
+
+
+
+
+### Question 10 : Ordonner les compagnies en fonction des retards moyens au départ:
+
+```{r Question10}
+
+hflights_data %>% group_by(UniqueCarrier) %>%
+                  summarise(nb_vol = n(), 
+                            mean_delay = mean(AirTime, na.rm = TRUE)) %>% 
+                  arrange(mean_delay )
+```
+
+
+
+
+
+
+
+
+

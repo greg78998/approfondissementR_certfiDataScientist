@@ -1,0 +1,242 @@
+---
+title: "SQL with R - VéloSTAR"
+author: "GrégoireHaniquaut"
+date: "2023-11-28"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir="L:/RBasesDonnees/02-Sql")
+```
+
+Nous considérons les données des stations de vélos en libre service STAR de la ville de Rennes. Une copie
+de la base SQLite est disponible dans le fichier LEveloSTAR.sqlite3. Utiliser les fonctions du package DBI
+pour répondre aux questions suivantes.
+
+```{r question0, include=FALSE}
+library(dplyr)
+library(DBI)
+library(RSQLite)
+```
+
+## Question1 : 
+
+Se connecter à la base de données et afficher les tables. Pour chaque table, afficher les variables
+
+```{r question1}
+setwd("L:/RBasesDonnees/02-Sql")
+
+connexion <- DBI::dbConnect(RSQLite::SQLite(), 
+                            "data/LEveloSTAR.sqlite3")
+
+dbListTables(connexion)
+
+
+dbListFields(conn = connexion, "Etat")
+dbListFields(conn = connexion, "Topologie")
+
+```
+
+## Question 2 : 
+
+Sélectionner l’identifiant id, le nom nom et l’identifiant de la station proche id_proche_1 depuis la table TopologieIncluotsding Pl
+
+
+```{r question2}
+requeteSQL <- "SELECT ID, NOM, id_proche_1 FROM Topologie"
+tabQuestion1 <- dbSendQuery(conn = connexion, statement = requeteSQL)
+dbFetch(tabQuestion1, n = 10)
+```
+
+
+
+
+
+## Question 3
+
+Faire une jointure pour créer une table qui contient la liste des stations avec l’identifiant, le nom et le nom de la station proche associée à l’identifiant id_proche_1 de la table Topologie.
+
+```{r question3}
+requeteSQL <- "SELECT a.ID, a.NOM as NOM_station, a.id_proche_1, b.NOM as NOM_stationProche
+               FROM Topologie as a LEFT JOIN 
+                    Topologie as b ON 
+                        a.id_proche_1 = b.id"
+
+tabQuestion1 <- dbSendQuery(conn = connexion, statement = requeteSQL)
+
+
+dbFetch(tabQuestion1, n = 10)
+```
+
+
+
+
+
+
+## Question 4 :
+
+Ajouter à la table précédente la distance euclidienne entre la station et la station proche associée à l’identifiant id_proche_1 de la table Topologie.
+
+```{r question4}
+
+requeteSQL <- "SELECT a.ID, a.NOM as NOM_station, a.longitude as Long_A, a.latitude as LAT_A, 
+               a.id_proche_1, b.NOM as NOM_stationProche, b.longitude as Long_B, b.latitude as Lat_A, 
+               SQRT(
+                  POWER(a.longitude-b.longitude,2) + POWER(a.latitude-b.latitude,2)) as dist
+               
+               FROM Topologie as a LEFT JOIN 
+                    Topologie as b ON 
+                        a.id_proche_1 = b.id
+               ORDER BY dist"
+
+tabQuestion4 <- dbGetQuery(conn = connexion, statement = requeteSQL)
+
+db <- tabQuestion4 %>% collect()
+```
+
+
+
+
+## Question 5 : 
+
+Nous nous trouvons au point de coordonnées (48.1179151,-1.7028661). Créer une table avec le nom des trois stations les plus proches classées par ordre de distance et le nombre d’emplacements libres dans ces stations.
+
+
+```{r question5}
+
+coord <- list(48.1179151,-1.7028661)
+
+lat_me <- as.numeric(coord[[1]]) *-1 # * -1 puisque dans la syntaxe SQL, le moins = une variable en moins
+long_me <- as.numeric(coord[[2]])*-1
+
+requeteSQL <- paste0(
+              "SELECT a.ID, a.NOM as StationNom, 
+                   SQRT(
+                        POWER(a.longitude +", long_me,",2) + 
+                        POWER(a.latitude +", lat_me ,",2)
+                        ) as distance, 
+                   b.emplacements_disponibles
+               FROM Topologie as a LEFT JOIN 
+                    Etat as b ON 
+                      a.ID = b.ID
+               ORDER BY distance 
+               LIMIT 3")
+
+db_fromSQL <- dbGetQuery(connexion, statement = requeteSQL) %>% collect()
+
+db_fromSQL
+
+dbDisconnect(connexion)
+```
+
+
+
+
+## Question 6
+
+Reprendre les questions précédentes en utilisant les fonctions de dplyr.
+
+```{r question6}
+
+setwd("L:/RBasesDonnees/02-Sql")
+
+connexion <- DBI::dbConnect(RSQLite::SQLite(), 
+                            "data/LEveloSTAR.sqlite3")
+
+dbListTables(conn = connexion)
+db_etat <- tbl(connexion,"Etat")
+db_topologie <- tbl(connexion,"topologie")
+
+
+# Question 1 : afficher les colonnes
+
+print("db_etat - Colonnes")
+print("----------------------")
+db_etat %>% colnames()
+print("db_topologie - Colonnes")
+print("----------------------")
+db_topologie %>% colnames()
+
+# Question 2 - selectionner certaines colonnes
+
+db_topologie %>% select(id, nom, id_proche_1)
+
+# Question 3 - rechercher le nom des stations les plus proches
+
+db_topologie %>% select(id, nom, id_proche_1) %>%
+                 left_join(db_topologie %>% 
+                               select(id, nom) %>% 
+                               rename(nomStationProche=nom, id_proche_1=id), 
+                           by = "id_proche_1")
+
+# Question 4 - ajouter la distance
+
+db_topologie %>% select(id, nom, id_proche_1, latitude, longitude) %>%
+                 rename(latitudeA = latitude, longitudeA = longitude) %>%
+                 left_join(db_topologie %>% 
+                               select(id, nom, latitude, longitude) %>% 
+                               rename(nomStationProche=nom, id_proche_1=id, 
+                                      latitudeB=latitude,longitudeB=longitude), 
+                           by = "id_proche_1") %>%
+                  mutate(distance = ((latitudeA - latitudeB)^2 + (longitudeA - longitudeB)^2)^(1/2)) %>%
+                  arrange(desc(distance)) %>% 
+                  select(id_proche_1, nomStationProche, distance) %>%
+                  head(10)
+
+# Question 5 - Nous avons les coordonnées suivantes (48.1179151,-1.7028661)
+
+coord <- list(48.1179151,-1.7028661)
+
+lat_me <- as.numeric(coord[[1]]) 
+long_me <- as.numeric(coord[[2]])
+
+db_topologie %>% select(id, nom, latitude, longitude) %>%
+                 rename(latitudeA = latitude, longitudeA = longitude) %>%
+                  mutate(distance = ((latitudeA - lat_me)^2 + (longitudeA - long_me)^2)^(1/2)) %>%
+                  select(id, nom, distance) %>%
+                  left_join(db_etat %>% select(id,emplacements_disponibles), 
+                            by = 'id') %>%
+                  arrange(distance) %>% 
+                  head(3)
+
+```
+
+
+
+
+## Question 7 :
+
+Terminer correctement en fermant la connexion à la base de données.
+
+
+```{r question7}
+dbDisconnect(connexion)
+```
+
+
+## Question 8 :
+
+Identifier les 10 stations les plus proches ayant des vélos disponibles
+
+```{r question7}
+
+dbListTables(connexion)
+
+dbListFields(conn = connexion, "Etat")
+
+
+dbGetQuery(connexion, 
+           statement = "SELECT DISTINCT velos_disponibles 
+                        FROM Etat 
+                        WHERE etat = 'En fonctionnement' ")
+
+```
+
+
+
+
+
+
