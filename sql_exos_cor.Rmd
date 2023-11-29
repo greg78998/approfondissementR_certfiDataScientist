@@ -1,0 +1,209 @@
+---
+title: "SQL - Exercices (Correction)"
+author: 'Pierre LAFAYE DE MICHEAUX'
+date: '`r Sys.setlocale("LC_TIME", "fr_FR.utf-8"); stringr::str_to_title(format(Sys.Date(), "%B %Y"))`'
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+library(DBI)
+library(dplyr)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Le vélo STAR
+
+Nous considérons les données des stations de vélos en libre service STAR de la ville de Rennes. Une copie de la base SQLite est disponible dans le fichier `LEveloSTAR.sqlite3`. Utiliser les fonctions du package `DBI` pour répondre aux questions suivantes.
+
+1. Se connecter à la base de données et afficher les tables. Pour chaque table, afficher les variables.
+
+```{r}
+dbname <- file.path("data", "LEveloSTAR.sqlite3")
+con <- dbConnect(RSQLite::SQLite(), dbname = dbname)
+dbListTables(con)
+for(table in dbListTables(con)) {
+  cat("--- Table", table, "---\n")
+  print(dbListFields(con, table))
+}
+```
+
+2. Sélectionner l'identifiant `id`, le nom `nom` et l'identifiant de la station proche `id_proche_1` depuis la table `Topologie`.
+
+```{r}
+query <- "
+SELECT id, nom, id_proche_1
+FROM Topologie
+"
+dbGetQuery(con, query) %>% head(3)
+```
+
+3. Faire une jointure pour créer une table qui contient la liste des stations avec l'identifiant, le nom et le nom de la station proche associée à l'identifiant `id_proche_1` de la table `Topologie`.
+
+```{r}
+query <- "
+SELECT left.id AS id,
+       left.nom AS nom,
+       right.nom AS nom_proche
+FROM Topologie AS left
+LEFT JOIN Topologie AS right
+ON (left.id_proche_1 = right.id)
+"
+dbGetQuery(con, query) %>% head(3)
+```
+
+4. Ajouter à la table précédente la distance euclidienne entre la station et la station proche associée à l'identifiant `id_proche_1` de la table `Topologie`.
+
+```{r}
+query <- "
+SELECT left.id AS id,
+       left.nom AS nom,
+       right.nom AS nom_proche,
+       (
+         SQRT(POWER((left.latitude - right.latitude), 2.0) +
+         POWER((left.longitude - right.longitude), 2.0))
+       ) AS distance
+FROM Topologie AS left
+LEFT JOIN Topologie AS right
+ON (left.id_proche_1 = right.id)
+"
+dbGetQuery(con, query) %>% head(3)
+```
+
+5. Nous nous trouvons au point de coordonnées (48.1179151,-1.7028661). Créer une table avec le nom des trois stations les plus proches classées par ordre de distance et le nombre d'emplacements libres dans ces stations.
+
+```{r}
+ma_latitude <- 48.1179151
+ma_longitude = -1.7028661
+
+query <- paste0("
+SELECT nom,
+       (
+         SQRT(POWER((latitude - ", ma_latitude, "), 2.0) +
+         POWER((longitude - ", ma_longitude, "), 2.0))
+       ) AS distance,
+       emplacements_disponibles
+FROM Etat
+ORDER BY distance
+LIMIT 3
+")
+dbGetQuery(con, query)
+```
+
+6. Reprendre les questions précédentes en utilisant les fonctions de `dplyr`.
+
+```{r}
+# Question 1
+db_etat <- tbl(con, "Etat")
+colnames(db_etat)
+db_topologie <- tbl(con, "Topologie")
+colnames(db_topologie)
+
+# Question 2
+db_topologie %>%
+  select(id, nom, id_proche_1) %>%
+  head(3) %>%
+  collect()
+
+# Question 3
+db_topologie %>%
+  left_join(db_topologie, by = c("id_proche_1" = "id")) %>%
+  rename(nom = nom.x, nom_proche = nom.y) %>%
+  select(id, nom, nom_proche) %>%
+  head(3) %>%
+  collect()
+
+# Question 4
+db_topologie %>%
+  left_join(db_topologie, by = c("id_proche_1" = "id")) %>%
+  mutate(distance = (latitude.x - latitude.y)^2 + (longitude.x - longitude.y)^2) %>%
+  rename(nom = nom.x, nom_proche = nom.y) %>%
+  select(id, nom, nom_proche, distance) %>%
+  head(3) %>%
+  collect()
+
+# Question 5
+db_etat %>%
+  mutate(distance = (latitude - ma_latitude)^2 + (longitude - ma_longitude)^2) %>%
+  select(nom, distance, emplacements_disponibles) %>%
+  arrange(distance) %>%
+  head(3) %>%
+  collect()
+```
+
+7. Terminer correctement en fermant la connexion à la base de données.
+
+```{r}
+dbDisconnect(con)
+```
+
+## Musique
+
+Sur le site https://github.com/lerocha/chinook-database, nous pouvons trouver des bases de données de bibliothèques musicales. Une copie de la base SQLite est disponible dans le fichier `Chinook_Sqlite.sqlite`.
+
+1. Se connecter à la base de données et afficher les tables. Explorer le jeu de données pour le découvrir. En particulier, étudier comment les tables `Playlist`, `PlaylistTrack` et `Track` sont liées.
+
+```{r}
+dbname <- file.path("data", "Chinook_Sqlite.sqlite")
+con <- dbConnect(RSQLite::SQLite(), dbname = dbname)
+dbListTables(con)
+db_playlist <- tbl(con, "Playlist")
+db_playlist %>% head(3) %>% collect()
+db_playlist_track <- tbl(con, "PlaylistTrack")
+db_playlist_track %>% head(3) %>% collect()
+db_track <- tbl(con, "Track")
+db_track %>% head(3) %>% collect()
+```
+
+2. Utiliser les verbes de `dplyr` pour savoir quelles sont les playlists qui contiennent le plus de pistes.
+
+```{r}
+db_playlist_track %>%
+  group_by(PlaylistId) %>%
+  summarise(n = n()) %>%
+  left_join(db_playlist, by = "PlaylistId") %>%
+  arrange(desc(n)) %>%
+  collect()
+```
+
+3. En utilisant `dplyr`, construire une table contenant les informations suivantes sur la playlist appelée `Classical` : le titre de chaque piste ainsi que le titre de l’album dont cette piste est tirée.
+
+```{r}
+db_album <- tbl(con, "Album")
+db_playlist_track %>%
+  left_join(db_playlist, by = "PlaylistId") %>%
+  rename(PlaylistName = Name) %>%
+  filter(PlaylistName == "Classical") %>%
+  left_join(db_track, by = "TrackId") %>%
+  left_join(db_album, by = "AlbumId") %>%
+  select(Name, Title) %>%
+  collect()
+```
+
+4. Même question en écrivant directement la requête en SQL.
+
+```{r}
+query <- "
+SELECT Name, Title
+FROM (
+  SELECT Name, AlbumId
+  FROM (
+    SELECT TrackId
+    FROM PlaylistTrack AS left
+    LEFT JOIN Playlist AS right
+    ON (left.PlaylistId = right.PlaylistId)
+    WHERE (Name = 'Classical')
+  ) AS left
+  LEFT JOIN Track AS right
+  ON (left.TrackId = right.TrackId)
+) AS left
+LEFT JOIN Album AS right
+ON (left.AlbumId = right.AlbumId)
+"
+dbGetQuery(con, query) %>% head(3)
+```
+
+5. Terminer correctement en fermant la connexion à la base de données.
+
+```{r}
+dbDisconnect(con)
+```
