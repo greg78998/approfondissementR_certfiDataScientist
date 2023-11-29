@@ -1,0 +1,285 @@
+---
+title: "Document Data Pipeline - Exercices"
+author: "GrégoireHaniquaut"
+date: "2023-11-29"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r pakagesLoad, include=FALSE}
+library(jsonlite)
+```
+
+## Exercice 1 : Conversion
+
+Nous considérons ici un jeu de données artificiel pour manipuler les fonctions du package jsonlite 
+
+## Exercice 1 - Question 1 :
+
+```{r ex1question1}
+
+df1 <- data.frame(x = runif(8), label = sample(c("A", "B", NA), 8, replace = TRUE))
+df2 <- data.frame(x = c(3.14, NaN, Inf))
+
+df1_json <- toJSON(df1,pretty = TRUE)
+print(df1_json)
+
+typeof(df1_json)
+```
+
+
+## Exercice 1 - Question 2 :
+
+Convertir df1_json en un objet R avec fromJSON. Le résultat est-il identique à l’objet initial ?
+
+```{r ex1question2}
+
+df1_df_recon <- fromJSON(df1_json)
+
+df1_df_recon
+
+all.equal(df1,df1_df_recon)
+
+```
+On constate un écart comme le montre la commande suivante : ```{r all.equal(df1,df1_df_recon)```} 
+
+
+
+## Exercice 1 - Question 3 :
+
+Faire la même manipulation avec df2. Discuter le résultat obtenu.
+
+```{r ex1question3}
+
+df2 <- data.frame(x = c(3.14, NaN, Inf))
+
+df2_json <- toJSON(df2,pretty = TRUE)
+print(df2_json)
+
+typeof(df2_json)
+
+df2_recon <- fromJSON(df2_json)
+
+all.equal(df2, df2_recon)
+```
+Nous constatons des écarts entre les deux tables : il semblerait que la valeur infini fut remplacée par une valeur manquante. Ainsi lors de la conversion inversée, la valeur infini est absente. 
+
+Hypothèse : JSON doit avoir des nombres finis ? 
+
+
+
+
+
+
+# Exercice 2 - Flux d'iris. 
+
+Nous considérons le jeu de données iris. L’objectif de cet exercice est de découvrir les fonctions stream_in et stream_out du package jsonlite qui permettent de gérer des flux de documents au format JSON. Ces fonctions se révéleront particulièrement utiles avec MongoDB
+
+## Exercice 2 - Question 1 :
+
+Lire la page d’aide des fonctions stream_in et stream_out. En particulier, remarquer dans les exemples comment l’argument con est utilisé pour travailler avec un fichier.
+
+```{r ex2question1}
+
+iris_json <- stream_in(con = url("https://jeroen.github.io/data/iris.json"), 
+                        handler = NULL, 
+                        pagesize = 500, 
+                        verbose = TRUE)
+
+diamonds2 <- stream_in(url("https://jeroen.github.io/data/diamonds.json"))
+diamonds2[1:10,]
+
+typeof(iris_json)
+
+```
+
+
+## Exercice 2 - Question 2 :
+
+Utiliser la fonction stream_out pour afficher les données au format NDJSON. Exporter le résultat dans un fichier iris.json.
+
+```{r ex2question2}
+
+chemin <- "C:/Users/cepe-s4-03/Desktop/Greg_approfondissementR/filetest.json"
+
+stream_out(iris_json, 
+           file(chemin))
+
+```
+
+## Exercice 2 - Question 3 :
+
+Importer les données de iris.json dans un objet R avec la fonction stream_in. Quelle différence
+y a-t-il entre cet objet et iris? Vous pouvez utiliser des fonctions comme all.equal ou str pour
+répondre
+
+```{r ex2question3}
+
+importIris_JSON <- stream_in(url("https://jeroen.github.io/data/iris.json") )
+
+str(importIris_JSON)
+
+
+# Import du dataframe IRIS (table chargée par défaut dans R)
+data(iris)
+iris
+
+str(iris)
+
+all.equal(iris, importIris_JSON)
+
+
+typeof(importIris_JSON)
+typeof(iris)
+
+str(importIris_JSON)
+str(iris)
+
+```
+On a perdu une variable factorielle (species) pour une variable en chaîne de caractères. Le type des variables a été modifié. 
+
+
+
+## Exercice 2 - Question 4 :
+
+Définir la fonction suivante :
+
+```{r ex2question4}
+
+dummy_handler <- function(df) {
+    # @df : un dataframe
+  
+  cat("--- APPEL DE LA FONCTION HANDLER ---\n")
+  
+  stream_out(df, file(tempfile()))
+}
+
+dummy_handler(iris)
+
+
+stream_in(url("https://jeroen.github.io/data/iris.json"), 
+          handler=dummy_handler)
+
+```
+Explication de la commande : on va chercher le fichier sur l'url, puis on va l'exporter sous la forme JSON sur notre espace de travail dans un fichier temporaire.
+
+## Exercice 2 - Question 5 :
+
+Comparer la sortie précédente avec celle de {```r stream_in(file("iris.json"), pagesize=10, handler=dummy_handler)```}
+
+Quel est le rôle de pagesize dans la gestion d’un flux?
+
+```{r ex2question5}
+stream_in(url("https://jeroen.github.io/data/iris.json"), 
+          pagesize=10, handler=dummy_handler)
+```
+
+On va extraire les items 10 par 10. Par iteration, nous allons extraire les lignes en petits nombres.
+
+
+
+# Exercice 3 - Star Wars API
+
+Le projet SWAPI est une source d’informations sur l’univers Star Wars. L’API disponible fournit plusieurs bases de données concernant les planètes, les vaisseaux, les véhicules, les personnages, les films et les espèces de la saga venue d’une galaxie très, très lointaine.
+
+## Exercice 3 - Question 1 
+
+Commencer par importer des données relatives aux planètes avec la commande : {r}" df_planet1
+<- fromJSON("https://swapi.dev/api/planets/?format=json") Combien de planètes sont stockées dans df_planet1 ?
+
+```{r}
+
+df_planet1 <-  fromJSON("https://swapi.dev/api/planets/?format=json")
+
+df_planet1$count
+
+```
+
+## Exercice 3 - Question 2
+
+À quoi correspondent df_planet1[["count"]] et df_planet1[["next"]] ?
+
+```{r}
+
+df_planet1[["count"]]
+
+# Nombre de planètes ?
+
+df_planet1[["next"]]
+
+# Next --> l'url de la page suivante ? 
+```
+
+## Exercice 3 - Question 3 
+
+. Écrire une boucle pour récupérer les informations de toutes les planètes disponibles dans l’API et stocker le résultat dans un objet df_planet. La fonction rbind_pages peut être utile ici.
+
+```{r}
+
+df1 <- df_planet1[["results"]]
+df1 <- df_planet1[["next"]]
+
+next_temp <- "https://swapi.dev/api/planets/?format=json"
+df_planet <- data.frame()
+i=1
+nbT <- df_planet1[["count"]] 
+#nbT <- 3 
+
+for (i in seq(1,nbT)  ) {
+  
+  print(paste0("url lu : " ,next_temp))
+  df_planet_temp <-  fromJSON(next_temp)
+  
+  next_temp <- df_planet_temp[["next"]]
+  
+  if (i == 1) {
+    df_planet <- df_planet_temp[["results"]]
+  }
+  else {
+    df_planet <- rbind(df_planet, df_planet_temp[["results"]])
+  }
+  
+}
+
+
+
+df1 <- df_planet1[["results"]]
+df1 <- df_planet1[["next"]]
+
+next_temp <- "https://swapi.dev/api/planets/?format=json"
+df_planet <- df_planet1
+i=1
+nbT <- df_planet1[["count"]] 
+#nbT <- 3 
+
+
+while (is.null(next_temp)) {
+  
+  print(paste0("url lu : " ,next_temp))
+  df_planet_temp <-  fromJSON(next_temp)
+  
+  next_temp <- df_planet_temp[["next"]]
+  
+  if (i == 1) {
+    df_planet <- df_planet_temp
+  }
+  else {
+    df_planet <- rbind_pages(df_planet, df_planet_temp)
+  }
+  
+  i=i+1
+}
+
+```
+
+## Exercice 3 - Question 4 
+
+Sauvegarder le résultat de la question précédente dans un fichier au format NDJSON.
+
+
