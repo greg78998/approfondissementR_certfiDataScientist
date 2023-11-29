@@ -1,0 +1,87 @@
+---
+title: "R Markdown c'est fantastique !"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+date: "2023-11-28"
+---
+
+```{r setup, include=FALSE}
+saspath <- "C:\\Program Files\\SASHome\\SASFoundation\\9.4\\sas.exe"
+sasopts <- "-nosplash -ls 75" # '-nosplash' fails in Unix terminals
+knitr::opts_chunk$set(engine.path=list(sas=saspath, saslog=saspath),
+                      engine.opts=list(sas=sasopts, saslog=sasopts), 
+                      comment=NA, echo = TRUE)
+
+```
+
+## R Markdown
+
+C'est du text avec du balisage [Markdown](https://www.markdownguide.org/) et des **bouts de codes** en différents [*langages*](https://bookdown.org/yihui/rmarkdown/language-engines.html) exécutés à la volée. Par exemple ci-dessous un code R :
+
+```{r}
+plot(cars)
+```
+
+
+## R Markdown avec SAS !
+
+Ceci est un chunk sas :
+
+```{sas}
+proc print data=sashelp.class;
+run;
+```
+
+## R Markdown avec SQL
+
+Ceci est un chunk R :
+
+```{r}
+setwd("L:/RBasesDonnees/02-Sql")
+library("DBI")
+con <- dbConnect(RSQLite::SQLite(), dbname = "data/LEveloSTAR.sqlite3")
+```
+
+Ceci est un chunk sql :
+
+```{sql connection = con, output.var = "toto"}
+SELECT * FROM Topologie
+```
+
+et on récupére les données dans un chunk R. La variable `toto` est définie en utilisant l'argument `output.var = "toto"` dans le chunk sql ci-dessus. Il faut aussi utiliser l'argument `connection = con`.
+
+Ceci est un chunk R :
+
+```{r}
+class(toto)
+head(toto)
+```
+
+## R Markdown avec Python
+
+On crée des données dans un chunk R :
+
+```{r}
+library(reticulate)
+b <- list(g = 1, f = 2:3)
+```
+
+on peut aussi créer des données dans un chunk python (et récupérer les données du chunk R ci-dessus) :
+
+```{python}
+a = [2,3,4]
+a
+r.b
+```
+
+On peut récupérer les données du chunk python ci-dessus dans le chunk R ci-dessous :
+
+```{r}
+class(py$a)
+py$a
+```
+
+
+
