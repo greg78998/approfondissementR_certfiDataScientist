@@ -1,0 +1,595 @@
+---
+title: "Document Data Pipeline - Exercices (Correction)"
+author: "Pierre LAFAYE DE MICHEAUX"
+date: "29 novembre 2023"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(jsonlite)
+library(mongolite)
+library(rvest)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Format JSON
+
+## Conversion
+
+Nous considérons ici un jeu de données artificiel pour manipuler les fonctions du package `jsonlite` :
+
+```{r}
+df1 <- data.frame(x = runif(8), label = sample(c("A", "B", NA), 8, replace = TRUE))
+df2 <- data.frame(x = c(3.14, NaN, Inf))
+```
+
+1. Convertir `df1` au format JSON avec la fonction `toJSON` et stocker le résultat dans une variable `df1_json`. Quel est le type de cette variable ? Que sont devenus les `NA` ?
+
+```{r}
+df1_json <- toJSON(df1, pretty = TRUE)
+typeof(df1_json)
+df1
+df1_json
+```
+
+2. Convertir `df1_json` en un objet **R** avec `fromJSON`. Le résultat est-il identique à l'objet initial ?
+
+```{r}
+df1_bis <- fromJSON(df1_json)
+df1_bis
+all.equal(df1, df1_bis)
+```
+
+3. Faire la même manipulation avec `df2`. Discuter le résultat obtenu.
+
+```{r}
+df2
+fromJSON(toJSON(df2))
+```
+
+## Flux d'iris
+
+Nous considérons le jeu de données `iris`. L'objectif de cet exercice est de découvrir les fonctions `stream_in` et `stream_out` du package `jsonlite` qui permettent de gérer des flux de documents au format JSON. Ces fonctions se révéleront particulièrement utiles avec MongoDB.
+
+Répondre aux questions suivantes en utilisant les fonctions du package `jsonlite` :
+
+1. Lire la page d'aide des fonctions `stream_in` et `stream_out`. En particulier, remarquer dans les exemples comment l'argument `con` est utilisé pour travailler avec un fichier.
+
+```{r}
+help(stream_in)
+# con <- file("dump.json", open = "wb")
+# stream_out(df, con)
+# close(con)
+```
+
+2. Utiliser la fonction `stream_out` pour afficher les données au format NDJSON. Exporter le résultat dans un fichier `iris.json`.
+
+```{r eval=FALSE}
+# Affichage sur la sortie standard
+stream_out(iris)
+```
+
+```{r}
+# Export dans un fichier
+iris_path <- file.path("data", "iris.json")
+con <- file(iris_path, open = "wb")
+stream_out(iris, con)
+close(con)
+```
+
+3. Importer les données de `iris.json` dans un objet **R** avec la fonction `stream_in`. Quelle différence y a-t-il entre cet objet et `iris`? Vous pouvez utiliser des fonctions comme `all.equal` ou `str` pour répondre.
+
+```{r}
+iris_bis <- stream_in(file(iris_path))
+str(iris_bis)
+all.equal(iris, iris_bis)
+```
+
+4. Définir la fonction suivante :
+```{r}
+   dummy_handler <- function(df) {
+     cat("--- APPEL DE LA FONCTION HANDLER ---\n")
+     stream_out(df, file(tempfile()))
+   }
+```
+   Expliquer la sortie de `stream_in(file("iris.json"), handler=dummy_handler)`.
+
+```{r eval=FALSE}
+# Fonction dummy_handler appelée une fois
+stream_in(file(iris_path), handler=dummy_handler)
+```
+
+5. Comparer la sortie précédente avec celle de
+
+```{r eval=FALSE}
+   stream_in(file("data/iris.json"), pagesize=10, handler=dummy_handler)
+```
+   Quel est le rôle de `pagesize` dans la gestion d'un flux?
+
+```{r eval=FALSE}
+# Fonction dummy_handler appelée 15 fois
+# Un appel par page de 10 éléments sur un total de 150
+stream_in(file(iris_path), pagesize=10, handler=dummy_handler)
+```
+
+## Star Wars API
+
+Le projet SWAPI est une source d'informations sur l'univers Star Wars. L'API disponible fournit plusieurs bases de données concernant les planètes, les vaisseaux, les véhicules, les personnages, les films et les espèces de la saga venue d'une galaxie très, très lointaine.
+
+1. Commencer par importer des données relatives aux planètes avec la commande :
+   
+```{r}
+   df_planet1 <- fromJSON("https://swapi.dev/api/planets/?format=json")
+```
+   Combien de planètes sont stockées dans `df_planet1` ?
+
+```{r}
+df_planet1[["results"]] %>%
+   summarise(n = n())
+```
+
+2. À quoi correspondent `df_planet1[["count"]]` et `df_planet1[["next"]]` ?
+
+```{r}
+# Nombre total de planètes dans la base
+df_planet1[["count"]]
+# Prochaine page de 10 planètes
+df_planet1[["next"]]
+```
+
+3. Écrire une boucle pour récupérer les informations de toutes les planètes disponibles dans l'API et stocker le résultat dans un objet `df_planet`. La fonction `rbind_pages` peut être utile ici.
+
+```{r}
+url_next <- "https://swapi.dev/api/planets/?format=json"
+pages <- list()
+while(!is.null(url_next)) {
+   df <- fromJSON(url_next)
+   pages[[length(pages) + 1]] <- df[["results"]]
+   url_next <- df[["next"]]
+}
+df_planet <- rbind_pages(pages)
+df_planet %>%
+   summarise(n = n())
+# autre façon :
+x <- c()
+i <- 1
+toto <- 1
+while (!is.null(toto)) {
+  url <- paste0("https://swapi.dev/api/planets/?page=", i, "&format=json")
+  tmp <- fromJSON(url)
+  x <- c(x, tmp[["results"]]$name)
+  i <- i + 1
+  toto <- tmp[["next"]]
+}
+x
+```
+
+4. Sauvegarder le résultat de la question précédente dans un fichier au format NDJSON.
+
+```{r}
+planet_path <- file.path("data", "planet.json")
+con <- file(planet_path, open = "wb")
+stream_out(df_planet, con)
+close(con)
+```
+
+# Web Scraping
+
+## Peter Jackson
+
+Nous nous intéressons à la page Wikipedia du réalisateur Peter Jackson :
+
+https://fr.wikipedia.org/wiki/Peter_Jackson
+
+1. Récupérer les données au format HTML de cette page.
+
+```{r}
+url_wikipedia <- "https://fr.wikipedia.org/"
+url_jackson <- "wiki/Peter_Jackson"
+url <- paste0(url_wikipedia, url_jackson)
+data_html <- read_html(url)
+```
+
+2. Extraire les nœuds `h2` associés aux titres de niveau 2.
+
+```{r}
+data_html %>% html_nodes("h2")
+```
+
+3. Proposer un sélecteur CSS pour ne récupérer que les titres de niveau 2 des sections du sommaire. Pour information, un sélecteur de classe s'écrit avec un point `.` comme dans `p.ma-classe` pour un paragraphe `<p class="ma-classe">...</p>`.
+
+```{r}
+data_html %>% html_nodes("h2 > span.mw-headline")
+```
+3. Récupérer les textes des titres avec `html_text`. Comparer avec le résultat obtenu par `html_attrs`.
+
+```{r}
+data_html %>% html_nodes("h2 > span.mw-headline") %>% html_text()
+data_html %>% html_nodes("h2 > span.mw-headline") %>% html_attrs()
+```
+
+4. Construire un sélecteur CSS pour récupérer la liste des films de Peter Jackson en tant que réalisateur et les URL des pages Wikipedia associées.
+
+```{r}
+#
+# https://developer.mozilla.org/fr/docs/Web/CSS/Reference
+#
+# :nth-child(an+b) permet de cibler un élément qui possède an+b-1 éléments voisins (au même niveau) avant lui dans l'arbre du document pour des valeurs entières n et qui possède un élément parent.
+# The :nth-child(n) selector matches every element that is the nth child of its parent.
+# A > B : Indique que l’élément sélectionné par B est un enfant direct de l’élément sélectionné par A.
+# A + B : Indique que les éléments sélectionnés par A et par B ont le même parent et que celui sélectionné par B suit immédiatement celui sélectionné par A.
+#
+# Avec DevTools, copy Selector depuis Bad Taste, puis sur le <ul> juste au-dessus: 
+css_selector1 <- "#mw-content-text > div.mw-parser-output > ul:nth-child(51) > li > i > a"
+data_html %>% html_nodes(css_selector1) %>% html_text() 
+css_selector2 <- "#mw-content-text > div > ul:nth-of-type(1) > li > i > a"
+data_html %>% html_nodes(css_selector2) %>% html_text() 
+css_selector3 <- "#mw-content-text > div.mw-parser-output > h3:nth-child(50) + ul > li > i > a"
+data_html %>% html_nodes(css_selector3) %>% html_text()
+```
+
+5. Obtenir le même résultat avec XPath.
+
+```{r}
+# avec DevTools, copy Xpath sur la balise <ul>, on obtient :
+# //*[@id="mw-content-text"]/div[1]/ul[1]
+xpath_str <- '//*[@id="mw-content-text"]/div[1]/ul[1]/li/i/a'
+# ou bien :
+xpath_str <- '//*[@id="mw-content-text"]
+  /div/ul[
+    preceding::h3[span/@id="En_tant_que_réalisateur"]
+    and
+    following::h3[span/@id="En_tant_que_scénariste"]
+  ]/li/i/a'
+data_html %>% html_nodes(xpath=xpath_str) %>% html_text()
+# voir https://www.w3schools.com/xml/xpath_syntax.asp
+```
+
+6. Construire un `tibble` contenant les titres des films réalisés par Peter Jackson ainsi que leur année de sortie et leur durée en minutes.
+
+```{r}
+# Récupération de la liste des films
+data_html <- read_html(paste0(url_wikipedia, url_jackson))
+xpath_films <- '//*[@id="mw-content-text"]
+  /div/ul[
+    preceding::h3[span/@id="En_tant_que_réalisateur"]
+    and
+    following::h3[span/@id="En_tant_que_scénariste"]
+  ]/li/i/a'
+films <- data_html %>% html_nodes(xpath=xpath_films) %>% html_attrs()
+
+# Récupération des informations de chaque film
+films_jackson <- tibble()
+# avec le selector :
+xpath_duree <- '//*[@id="mw-content-text"]/div[1]/div[2]/table/tbody/tr[10]/td'
+# ou bien :
+xpath_duree <- '(//*[@id="mw-content-text"]
+  //table/tbody/tr/td[
+    preceding::th[text()="Durée"]
+  ])[1]'
+xpath_sortie <- '(//*[@id="mw-content-text"]
+  //table/tbody/tr/td[
+    preceding::th[text()="Sortie"]
+  ])[1]'
+for(i in seq_along(films)) {
+   url_film <- films[[i]]["href"]
+   if (! i %in% c(21, 24)) {
+     data_html <- paste0(url_wikipedia, url_film) %>% read_html()
+   } else {
+     data_html <- paste0(url_film) %>% read_html()
+   }
+   # Extraction de la durée en minutes (hors version longue)
+   film_duree <- data_html %>%
+      html_nodes(xpath=xpath_duree) %>%
+      html_text() %>%
+      str_extract("[0-9]+")
+   # Extraction de l'année de sortie
+   film_sortie <- data_html %>%
+      html_nodes(xpath=xpath_sortie) %>%
+      html_text() %>%
+      str_extract("[0-9]+")
+   films_jackson <- films_jackson %>% rbind(tibble(titre = films[[i]]["title"],
+                                                   duree = as.integer(film_duree),
+                                                   sortie = as.integer(film_sortie)))
+}
+
+# Résultat
+films_jackson
+```
+
+7. Utiliser les fonctions de `dplyr` pour trouver les 3 films les plus longs réalisés par Peter Jackson.
+
+```{r}
+films_jackson %>%
+   arrange(desc(duree)) %>%
+   head(3)
+```
+
+8. Exporter le `tibble` dans un fichier au format NDJSON.
+
+```{r}
+jackson_path <- file.path("data", "jackson.json")
+con <- file(jackson_path, open = "wb")
+stream_out(films_jackson, con)
+close(con)
+```
+
+## Trampoline
+
+Le trampoline est un sport olympique depuis les jeux de Sydney en 2000. La page suivante donne accès à la liste de tous les médaillés de cette discipline :
+
+https://fr.wikipedia.org/wiki/Liste_des_m%C3%A9daill%C3%A9s_olympiques_au_trampoline
+
+1. Utiliser la fonction `html_table` pour récupérer le tableau des médaillées féminines dans un data frame.
+
+```{r}
+url <- "https://fr.wikipedia.org/wiki/Liste_des_m%C3%A9daill%C3%A9s_olympiques_au_trampoline"
+data_html <- read_html(url)
+
+css_selector <- "#mw-content-text > div > table:nth-of-type(2)"
+df_femmes <- data_html %>% html_nodes(css_selector) %>% html_table()
+df_femmes[[1]]
+```
+
+2. À partir de ce tableau, créer un nouveau data frame contenant, pour chaque pays, le nombre de médailles d'or, d'argent et de bronze obtenues lors des différentes olympiades.
+
+```{r}
+medaille_femmes <- df_femmes[[1]] %>%
+   mutate(MédailleOr     = str_extract(Or, "(?<=\\().*(?=\\))"),
+          MédailleArgent = str_extract(Argent, "(?<=\\().*(?=\\))"),
+          MédailleBronze = str_extract(Bronze, "(?<=\\().*(?=\\))")) %>%
+   select(starts_with("Médaille")) %>%
+   pivot_longer(cols =  everything(),
+                names_to = "Médaille",
+                values_to = "Pays") %>%
+   group_by(Pays, Médaille) %>%
+   summarise(n = n(), .groups = 'drop') %>%
+   pivot_wider(names_from = Médaille,
+               values_from = n,
+               values_fill = 0) %>%
+   rename(Or     = MédailleOr,
+          Argent = MédailleArgent,
+          Bronze = MédailleBronze) %>%
+   relocate(Pays, Or, Argent, Bronze)
+
+medaille_femmes
+```
+
+3. Classer ce data frame dans l'ordre usuel en fonction d'abord du nombre de médailles d'or obtenues puis, pour départager les ex-æquo, en fonction du nombre de médailles d'argent et enfin du nombre de médailles de bronze.
+
+```{r}
+medaille_femmes %>%
+   arrange(desc(Or), desc(Argent), desc(Bronze))
+```
+
+4. Mêmes questions pour le tableau masculin et enfin pour le tableau mixte. Le résultat pourra être comparé avec la page : https://fr.wikipedia.org/wiki/Trampoline_aux_Jeux_olympiques
+
+```{r}
+# Médailles hommes
+css_selector <- "#mw-content-text > div > table:nth-of-type(1)"
+df_hommes <- data_html %>% html_nodes(css_selector) %>% html_table()
+medaille_hommes <- df_hommes[[1]] %>%
+   mutate(MédailleOr     = str_extract(Or, "(?<=\\().*(?=\\))"),
+          MédailleArgent = str_extract(Argent, "(?<=\\().*(?=\\))"),
+          MédailleBronze = str_extract(Bronze, "(?<=\\().*(?=\\))")) %>%
+   select(starts_with("Médaille")) %>%
+   pivot_longer(cols =  everything(),
+                names_to = "Médaille",
+                values_to = "Pays") %>%
+   group_by(Pays, Médaille) %>%
+   summarise(n = n(), .groups = 'drop') %>%
+   pivot_wider(names_from = Médaille,
+               values_from = n,
+               values_fill = 0) %>%
+   rename(Or     = MédailleOr,
+          Argent = MédailleArgent,
+          Bronze = MédailleBronze) %>%
+   relocate(Pays, Or, Argent, Bronze)
+medaille_hommes %>%
+   arrange(desc(Or), desc(Argent), desc(Bronze))
+
+# Médailles mixte
+medaille_femmes %>%
+   full_join(medaille_hommes, by="Pays") %>%
+   mutate(Or     = ifelse(is.na(Or.x), 0, Or.x) +
+                   ifelse(is.na(Or.y), 0, Or.y),
+          Argent = ifelse(is.na(Argent.x), 0, Argent.x) +
+                   ifelse(is.na(Argent.y), 0, Argent.y),
+          Bronze = ifelse(is.na(Bronze.x), 0, Bronze.x) +
+                   ifelse(is.na(Bronze.y), 0, Bronze.y)) %>%
+   select(Pays, Or, Argent, Bronze) %>%
+   arrange(desc(Or), desc(Argent), desc(Bronze))
+```
+
+# MongoDB
+
+## Planètes de Star Wars
+
+Nous reprenons ici les données exportées au format NDJSON à la fin de l'exercice *Star Wars API*.
+
+1. Se connecter à une collection `planet` sur un serveur MongoDB et s'assurer que la collection est vide.
+
+```{r}
+m <- mongo("planet")
+if(m$count() > 0) m$drop()
+m$count()
+```
+
+2. Importer les données au format NDJSON dans la collection.
+
+```{r}
+m$import(file(planet_path))
+m$count()
+```
+
+3. Rechercher les planètes dont la période de rotation est égale à 25. Combien y en a-t-il?
+
+```{r}
+m$find(query = '{"rotation_period": "25"}') %>% head(2)
+m$count('{"rotation_period": "25"}')
+```
+
+4. Même question mais en limitant la réponse aux clés `name`, `rotation_period`, `orbital_period` et `diameter`.
+
+```{r}
+m$find(query = '{"rotation_period": "25"}',
+       fields = '{"_id": 0,
+                  "name": 1,
+                  "rotation_period": 1,
+                  "orbital_period": 1,
+                  "diameter": 1}')
+```
+
+5. Trier les planètes du résultat précédent par diamètre décroissant. Quel est le problème ? Stocker le résultat de la recherche dans un objet **R** et utiliser `str` pour justifier votre réponse
+
+```{r}
+df <- m$find(query = '{"rotation_period": "25"}',
+             fields = '{"_id": 0,
+                        "name": 1,
+                        "rotation_period": 1,
+                        "orbital_period": 1,
+                        "diameter": 1}',
+             sort = '{"diameter": -1}')
+print(df)
+str(df)
+```
+
+6. Vider la collection et importer de nouveau les données en utilisant la méthode par flux décrite en cours. Utiliser la fonction `handler` pour nettoyer les données :
+
+  - convertir les valeurs qui doivent l'être en nombres (ignorer les warnings avec `suppressWarnings`),
+  - transformer `climate` et `terrain` en tableaux de chaînes de caractères,
+  - supprimer les colonnes `films`, `gravity`, `residents`, `created` et `edited`.
+
+```{r}
+m$drop()
+
+custom_handler <- function(df) {
+  # Convertir les valeurs qui doivent l'être en nombres
+  df$rotation_period <- suppressWarnings(as.double(df$rotation_period))
+  df$orbital_period  <- suppressWarnings(as.double(df$orbital_period))
+  df$diameter        <- suppressWarnings(as.double(df$diameter))
+  df$surface_water   <- suppressWarnings(as.double(df$surface_water))
+  df$population      <- suppressWarnings(as.double(df$population))
+
+  # Transformer `climate` et `terrain` en tableaux de chaînes de caractères
+  df$climate <- strsplit(df$climate, ", ")
+  df$terrain <- strsplit(df$terrain, ", ")
+
+  # Supprimer les colonnes `films`, `gravity`, `residents`, `created` et `edited`
+  df$created   <- NULL
+  df$edited    <- NULL
+  df$films     <- NULL
+  df$gravity   <- NULL
+  df$residents <- NULL
+
+  ftmp <- file(tempfile(), open="w+b")
+  stream_out(df, ftmp)
+  m$import(ftmp)
+  close(ftmp)
+}
+
+stream_in(file(planet_path), handler = custom_handler)
+
+m$find() %>% head(2)
+```
+
+7. Reprendre la question 5 et vérifier que le résultat est maintenant correct.
+
+```{r}
+m$find(query = '{"rotation_period": 25}',
+       fields = '{"_id": 0,
+                  "name": 1,
+                  "rotation_period": 1,
+                  "orbital_period": 1,
+                  "diameter": 1}',
+       sort = '{"diameter": -1}')
+```
+
+8. Extraire les planètes dont le nom commence par `T`.
+
+```{r}
+m$find(query='{"name": {"$regex": "^T", "$options" : "i"} }',
+       fields='{"_id": 0, "name": 1}')
+```
+
+9. Extraire les planètes dont le diamètre est strictement supérieur à `10000` et où se trouve des montagnes.
+
+```{r}
+m$find(query='{"$and": [{"diameter": {"$gt": 10000}},
+                        {"terrain": {"$in": ["mountains"]}}] }',
+       fields='{"_id": 0, "name": 1, "diameter": 1, "terrain": 1}')
+```
+
+10. Rechercher puis supprimer la planète dont le nom est `unknown`.
+
+```{r}
+m$find(query='{"name": "unknown" }')
+m$remove(query='{"name": "unknown" }')
+m$find(query='{"name": "unknown" }')
+```
+
+# Agrégation
+
+## Planètes de Star Wars (Fin)
+
+Nous continuons avec la collection `planet` créée dans l'exercice précédent.
+
+1. Écrire un agrégateur qui calcule le nombre de planètes dans la base avec le pipeline d'agrégation de MongoDB. Verifier le résultat avec la méthode `count`.
+
+```{r}
+# Pipeline d'agrégation
+m$aggregate('[
+  { "$group": { "_id": null, "count": { "$sum": 1 } } }
+]')
+
+# Vérification
+m$count()
+```
+
+2. Écrire un agrégateur pour calculer le diamètre moyen et la somme des populations des planètes contenant des glaciers avec le pipeline d'agrégation de MongoDB.
+
+```{r}
+m$aggregate('[
+  { "$match": {"terrain": {"$in": ["glaciers"] } } },
+  { "$group": { "_id": null,
+                "diameter": { "$avg": "$diameter" },
+                "population": { "$sum": "$population" } } }
+]')
+```
+
+# Exercices de synthèse
+
+Choisir une des sources d'informations parmi les propositions suivantes (ou en prendre une de votre choix mais après discussion avec le formateur) pour mettre en place un pipeline complet :
+
+- récupération des données depuis une source,
+- filtrage et nettoyage du flux de données,
+- insertion dans une collection MongoDB,
+- mise en place de quelques agrégateurs pertinents (statistique, graphique, ...).
+
+**Web Scraping**
+
+- Wikipedia (https://fr.wikipedia.org/)
+- Sites Fandom de votre choix (https://www.fandom.com/)
+- National Weather Service (https://www.weather.gov/)
+- Opéra de Paris (https://www.operadeparis.fr/programmation-et-billets)
+- Internet Movie Database (https://www.imdb.com/)
+- TheTVDB.com (https://www.thetvdb.com/)
+- Laos Garden (https://www.laosgarden.com)
+
+<!-- Trop de JS : Vélos Specialized (https://www.specialized.com) -->
+<!-- Pour Éric : Ski Info (https://www.skiinfo.fr/alpes-du-nord/statistiques.html) -->
+
+**Sources API**
+
+- SWAPI (https://swapi.dev/)
+- Sites Fandom de votre choix (https://www.fandom.com/)
+- Nature OpenSearch (https://www.nature.com/opensearch/)
+- Recipe Puppy (http://www.recipepuppy.com/about/api/)
+
+<!-- Retrait du search : - OpenLibrary (https://openlibrary.org/dev/docs/json_api) -->
+
+Il existe aussi des moteurs de recherche d'API : https://www.programmableweb.com/apis/directory
