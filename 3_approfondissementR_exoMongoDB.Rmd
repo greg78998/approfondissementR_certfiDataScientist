@@ -1,0 +1,245 @@
+---
+title: "MongoDB"
+author: "GrégoireHaniquaut"
+date: "2023-11-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(jsonlite)
+library(mongolite)
+```
+
+## MongoDB - Question 1 
+
+Se connecter à une collection planet sur un serveur MongoDB et s’assurer que la collection est vide
+
+```{r}
+
+planet <- "Greg"
+m <- mongo(collection = planet)
+m$count()
+```
+LLa collection planet est bien vide. 
+
+## MongoDB - Question 2 
+
+Importer les données au format NDJSON dans la collection
+
+```{r}
+
+# On va chercher les base ssur les planètes 
+
+url_next <- "https://swapi.dev/api/planets/?format=json"
+pages <- list()
+while(!is.null(url_next)) {
+df <- fromJSON(url_next)
+pages[[length(pages) + 1]] <- df[["results"]]
+url_next <- df[["next"]]
+}
+df_planet <- rbind_pages(pages)
+
+df_planet_json <- toJSON(df_planet)
+
+
+m$insert(fromJSON(df_planet_json))
+```
+
+
+
+## MongoDB - Question 3
+
+Rechercher les planètes dont la période de rotation est égale à 25. Combien y en a-t-il?
+
+```{r}
+
+m$find(query = '{"rotation_period":"25"}')
+```
+
+## MongoDB - Question 4
+
+Même question mais en limitant la réponse aux clés name, rotation_period, orbital_period et diameter.
+
+```{r}
+
+m$find(query = '{"rotation_period":"25"}', 
+       field='{"_id" : 0,
+               "name":1, 
+               "rotation_period":1, 
+               "orbital_period":1,
+               "diameter":1}')
+```
+
+
+## MongoDB - Question 5
+
+Trier les planètes du résultat précédent par diamètre décroissant. Quel est le problème ? Stocker le résultat de la recherche dans un objet R et utiliser str pour justifier votre réponse
+
+```{r}
+
+m$find(query = '{"rotation_period":"25","diameter": {"$exists" : true}}', 
+       field='{"_id" : 0,
+               "name":1, 
+               "rotation_period":1, 
+               "orbital_period":1,
+               "diameter":1}',
+       sort = '{"diameter":-1}') %>% head(10)
+
+m$find(query = '{"rotation_period":"25"}', 
+       field='{"_id" : 0,
+               "name":1, 
+               "rotation_period":1, 
+               "orbital_period":1,
+               "diameter":1}',
+       sort = '{"diameter":-1}') %>% head(10)
+```
+pas trier par ordre décroissant + des 0 pour le diamètre
+
+
+## MongoDB - Question 6
+
+Vider la collection et importer de nouveau les données en utilisant la méthode par flux décrite en cours.
+
+Utiliser la fonction handler pour nettoyer les données :
+
+• convertir les valeurs qui doivent l’être en nombres (ignorer les warnings avec suppressWarnings),
+• transformer climate et terrain en tableaux de chaînes de caractères,
+• supprimer les colonnes films, gravity, residents, created et edited.
+
+```{r}
+m$count()
+m$drop()
+m$count()
+```
+```{r}
+
+df_planet_bis <- df_planet 
+df <- df_planet
+
+
+handler_fct <- function(df) {
+  
+    df$rotation_period <- suppressWarnings(as.numeric(df$rotation_period))
+    df$orbital_period <- suppressWarnings(as.numeric(df$orbital_period))
+    df$diameter <- suppressWarnings(as.numeric(df$diameter))
+    
+    df$climate <- strsplit(df$climate, split=', ') 
+    df$terrain <- strsplit(df$terrain, split=', ') 
+    
+
+    df$films <- NULL
+    df$gravity <- NULL
+    df$residents <- NULL
+    df$created <- NULL
+    df$edited <- NULL
+  
+    ftmp <- file(tempfile(), open="w+b")
+    stream_out(df, ftmp)
+    m$import(ftmp)
+    close(ftmp)
+    return(df)
+}
+  
+stream_in(file(planet_path), handler = handler_fct) # ne focntionne pas 
+
+df_planet_rev <- handler_fct(df_planet)
+
+m$insert(df_planet_rev)
+
+```
+
+## MongoDB - Question 7
+
+Reprendre la question 5 et vérifier que le résultat est maintenant correct.
+
+
+```{r}
+
+
+m$find(query = '{"rotation_period":25}', 
+       field='{"_id" : 0,
+               "name":1, 
+               "rotation_period":1, 
+               "orbital_period":1,
+               "diameter":1, 
+               "terrain":1}',
+       sort = '{"diameter":-1}') %>% distinct()
+
+
+```
+
+## MongoDB - Question 8
+
+Extraire les planètes dont le nom commence par T.
+
+
+```{r}
+  
+  m$find(query = '{"name":{"$regex":"^t", "$options" : "i"}}', 
+         field='{"_id" : 0,
+                 "name":1, 
+                 "rotation_period":1, 
+                 "orbital_period":1,
+                 "diameter":1}',
+         sort = '{"diameter":-1}') %>% distinct()
+```
+On place le i pour que la casse ne soit pas pris en compte. 
+
+
+
+
+## MongoDB - Question 9
+
+Extraire les planètes dont le diamètre est strictement supérieur à 10000 et où se trouve des montagnes.
+
+```{r}
+  
+  m$find(query = '{"diameter":{"$gt": 10000},
+                   "terrain":{"$regex":"mountain", "$options":"i"}}', 
+         field='{"_id" : 0,
+                 "name":1, 
+                 "rotation_period":1, 
+                 "orbital_period":1,
+                 "diameter":1,
+                 "terrain":1, 
+                 "nature":1}',
+         sort = '{"diameter":-1}') %>% distinct()
+
+```
+
+
+## MongoDB - Question 10
+
+Rechercher puis supprimer la planète dont le nom est unknown.
+
+```{r}
+ m$find(query = '{"diameter":{"$gt": 10000},
+                   "terrain":{"$regex":"mountain", "$options":"i"}}',
+         field='{"_id" : 0,
+                 "name":1, 
+                 "rotation_period":1, 
+                 "orbital_period":1,
+                 "diameter":1,
+                 "terrain":1, 
+                 "nature":1}',
+         sort = '{"diameter":-1}') %>% distinct() 
+
+```
+ 
+Rechercher puis supprimer la planète dont le nom est unknown.
+
+```{r}
+ m$find(query = '{"name" : {"$ne":"unknown"}}',
+         field='{"_id" : 0,
+                 "name":1, 
+                 "rotation_period":1, 
+                 "orbital_period":1,
+                 "diameter":1,
+                 "terrain":1, 
+                 "nature":1}',
+         sort = '{"diameter":-1}') %>% distinct() 
+
+```
+ 
+

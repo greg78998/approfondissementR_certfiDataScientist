@@ -1,0 +1,164 @@
+---
+title: "WebScrapping"
+author: "GrégoireHaniquaut"
+date: "2023-11-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r packages, include = FALSE}
+library(curl)
+library(rvest)
+library(dplyr)
+library(tidyr)
+```
+
+## Question1
+
+
+Récupérer les données au format HTML de cette page
+
+```{r}
+
+url_jackson <- "https://fr.wikipedia.org/wiki/Peter_Jackson"
+
+data_htlm <- read_html(url_jackson)
+
+```
+
+## Question2 
+
+Extraire les nœuds h2 associés aux titres de niveau 2.
+
+```{r}
+
+data_htlm %>% html_nodes("h2") %>% head(5) %>% html_text()
+
+
+```
+
+## Question3 
+
+Proposer un sélecteur CSS pour ne récupérer que les titres de niveau 2 des sections du sommaire. Pour information, un sélecteur de classe s’écrit avec un point . comme dans p.ma-classe pour un paragraphe <p class="ma-classe">...</p>. Extraire les nœuds h2 associés aux titres de niveau 2.
+
+```{r}
+
+css_filter <- "#vector-toc > div > h2"
+data_htlm %>% html_nodes(css_filter) %>% html_text()
+
+```
+
+## Question4 
+
+Récupérer les textes des titres avec html_text. Comparer avec le résultat obtenu par html_attrs.
+
+```{r}
+css_filter <- "#vector-toc > div > h2"
+data_htlm %>% html_nodes(css_filter) %>% html_text()
+
+data_htlm %>% html_nodes(css_filter) 
+
+data_htlm %>% html_nodes(css_filter) %>% html_attrs()
+
+```
+
+
+## Question5 
+
+Construire un sélecteur CSS pour récupérer la liste des films de Peter Jackson en tant que réalisateur et les URL des pages Wikipedia associées.
+
+```{r}
+
+css_filter <- '#mw-content-text > div > ul:nth-of-type(1) > li > i:nth-of-type(1) > a'
+data_htlm %>% html_nodes(css_filter) %>% html_text()
+```
+#mw-content-text > div.mw-content-ltr.mw-parser-output > ul:nth-child(51) > li:nth-child(6) > i:nth-child(2) > a
+```{r}
+
+css_filter <- "#mw-content-text > div > ul:nth-of-type(1) > li > i > a"
+
+data_htlm %>% html_nodes(css_filter)
+```
+
+## Question6
+
+Obtenir le même résultat avec XPath.
+
+
+
+
+```{r}
+
+xPath <- '//*[@id="mw-content-text"]/div[1]/ul[1]/li'
+
+data_htlm %>% html_nodes(xpath= xPath) 
+
+data_htlm %>% html_nodes(xpath= xPath) %>% html_text()
+```
+## Question 7 : 
+
+Construire un tibble contenant les titres des films réalisés par Peter Jackson ainsi que leur année de sortie et leur durée en minutes.
+
+```{r}
+
+css_list <- '#mw-content-text > div > ul:nth-of-type(1) > li > i:nth-of-type(1) > a'
+
+css_list <- '#mw-content-text > div.mw-content-ltr.mw-parser-output > h3:nth-child(50) > span.mw-editsection > a:nth-child(4)'
+
+ x <-   data_htlm %>% html_nodes(css_filter) %>% html_attrs() %>% data.frame() 
+ x <- x[,1:3]
+
+ for (i in seq(1,ncol(x))) {
+   
+      url_film_pj <- paste0("https://fr.wikipedia.org/",x[i,1] ,sep = "")
+      data_film <- read_html(url_film_pj)
+   
+      data_htlm_ <- read_html(url_film_pj) 
+      
+      xPath_duree <- '//*[@id="mw-content-text"]/div[1]/div[1]/table/tbody/tr[9]/td/text()'
+      xPath_annee <- '//*[@id="mw-content-text"]/div[1]/div[1]/table/tbody/tr[10]/td/a'
+
+      data <- data.frame(film = x[i,2],
+                         url = x[i,1],
+                         duree=data_htlm_ %>% 
+                                            html_nodes(xPath_duree) %>% 
+                                            html_text(), 
+                         annee = data_htlm_ %>% 
+                                            html_nodes(xPath_annee) %>% 
+                                            html_text())
+      
+      if (i==1) {
+        data_concat <- data
+      } else {
+        data_concat <- data %>% bind_rows(data)
+      }
+ }
+  
+  
+  
+
+```
+
+#mw-content-text > div.mw-content-ltr.mw-parser-output > h3:nth-child(50) > span.mw-editsection > a:nth-child(4)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
